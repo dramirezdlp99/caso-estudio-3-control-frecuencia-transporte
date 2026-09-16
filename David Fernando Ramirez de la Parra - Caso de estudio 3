@@ -1,0 +1,62 @@
+David Fernando Ramírez de la Parra - Caso de estudio 3
+
+Control de frecuencia del transporte público urbano
+
+{ "bus": 214, "ruta": "R07", "lat": 1.21384, "lon": -77.28122,
+"vel": 6.4, "rumbo": 118, "ts": 1767229213, "hdop": 3.9, "sats": 6 }
+hdop : dilucion de precision, mayor valor = posicion menos confiable
+ts : reloj del equipo del bus, con desfase de hasta 90 s respecto al servidor
+
+Cada ruta es una polilinea de 900 a 2.400 vertices en coordenadas geograficas.
+
+Cada paradero tiene: id, ruta, orden, posicion sobre la polilinea (metros
+desde el inicio) y cupo fisico (1 a 3 buses simultaneos).
+Las 22 rutas comparten tramos: en el centro pasan hasta 9 rutas por la
+misma calle, y hay pares de calles paralelas separadas 25 metros.
+
+Control de frecuencia del transport público urbano 
+
+Reconstrucción de trayectorias con GPS sucio y detección de buses agrupados, en vivo y sin conexión estable
+
+1. Contexto
+
+El sistema estratégico de transporte público de una ciudad intermedia opera 310 buses sobre 22 rutas que comparten tramos en el centro histórico. El indicador que más afecta la percepción del usuario no es la velocidad del bus, sino la regularidad: que los buses pasen cada cierto intervalo. En la práctica ocurre el fenómeno contrario, conocido como bunching: un bus se retrasa, recoge más pasajeros porque lleva más tiempo acumulado en la vía, se retrasa aún más, y el bus siguiente lo alcanza. Terminan viajando en pareja, uno lleno y otro casi vacío, y detrás queda un hueco de servicio de 20 minutos.
+
+El centro de control tiene una pantalla grande con el mapa de la flota; los supervisores de vía están en los paraderos con teléfonos de gama baja y conectividad irregular. La herramienta actual solo dibuja los buses donde el GPS dice que están. Con eso el supervisor detecta el bunching cuando ya ocurrió: llega tarde para la única acción que sirve, que es retener un bus en un paradero unos minutos antes de que la pareja se forme. 
+
+La dificultad ténica está en el dato. El GPS de los buses reporta cada 10 a 30 segundos, con error de 8 a 15 metros en vía abierta y saltos de hasta 60 metros en el centro por rebote de la señal en los edificios. En las vías paralelas del centro, dos calles distan 25 metros: una posición asignada a la calle equivocada convierte a un bus puntual en un bus perdido. 
+
+El problema real que se debe resolver
+Convertir un flujo de puntos ruidosos en una posición confiable a lo largo de cada ruta, calcular los intervalos entre buses
+consecutivos y recomendar una acción antes de que el problema se materialice, manteniendo un mapa fluido con 310
+vehículos y un teléfono de gama baja como cliente. El caso evalúa geometría computacional aplicada, algoritmos sobre
+secuencias y reparto del trabajo entre hilos.
+
+2. Datos disponibles
+
+2.1 Flujo de posiciones (WebSocket, entre 10 y 31 mensajes por segundo)
+
+{ "bus": 214, "ruta": "R07", "lat": 1.21384, "lon": -77.28122,
+"vel": 6.4, "rumbo": 118, "ts": 1767229213, "hdop": 3.9, "sats": 6 }
+hdop : dilucion de precision, mayor valor = posicion menos confiable
+ts : reloj del equipo del bus, con desfase de hasta 90 s respecto al servidor
+
+2.2 Cartografía de rutas (archivo estático, 6 MB)
+
+Cada ruta es una polilinea de 900 a 2.400 vertices en coordenadas geograficas 
+
+Cada paradero tiene: id, ruta, orden, posicion sobre la polilinea (metros desde el inicio) y cupo fisico (1 a 3 buses simultaneos). Las 22 rutas comparten tramos: en el centro pasan hasta 9 rutas por la misma calle, y hay pares de calles paralelas separadas 25 metros.
+
+2.3 Programación de servicio 
+
+Cada ruta tiene una frecuencia programada por franja horaria (por ejemplo, 6 minutos entre 6:00 y 08:30; 12 minutos entre 10:00 y 11:30). Un bus se considera agrupado cuando el intervalo con el bus anterior de su misma ruta es menor que el 40% del programado, y se considera hueco de servicio cuando supera el 160%. 
+
+3. Requerimiento 
+
+Construya una aplicación web, desplegada en la nube, para el centro de control y para los supervisores de vía. LA aplicación debe cumplir los siguientes requerimientos funcionales.
+
+RF-1. Búsqueda de candidatos sobre la cartografía
+Por cada posición recibida hay que encontrar los segmentos de vía cercanos. Recorrer los 40.000 vértices de las 22 rutas por cada mensaje, 31 veces por segundo, no es viable. Debe construir un índice espacial sobre los segmentos que permita recuperar los candidatos dentro de un radio dado con costo acotado, y justificar el tamaño de celda o el criterior de partición elegido frente a la densidad real de la red.
+
+RF-2. Asignación de la posición a la vía correcta.
+Asignar cada punto al segmento más cercano es la solución obvia y es incorrecta: en el centro produce saltos permanentes entre calles paralelas. Se exige una asignación que considere la secuencia de posiciones y no cada punto de forma aislada, combinando la distancia del punto al segmento con la coherencia entre el avance sobre la ruta y la distancia realmente recorrida. La decisión debe tomarse sobre una ventana móvil de pocos puntos, para que la latencia siga siendo acotada y el sistema no espere al final del viaje.

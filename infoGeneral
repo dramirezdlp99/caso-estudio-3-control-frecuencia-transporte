@@ -1,0 +1,4 @@
+infoGeneral
+
+#Crear proyecto en angular
+ng new frontend --routing --style=css
